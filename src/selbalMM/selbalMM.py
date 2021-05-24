@@ -11,7 +11,8 @@ University of South Florida
 from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
-from core import cv_balance, select_balance
+from core import cv_balance, select_balance, _build_balance
+from numpy import var
 
 class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
     """ Selecting balances with mixed models
@@ -57,7 +58,6 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         #X, Y = check_X_y(X, Y)
         # build own with check_array 
         # store classes
-        print(self)
         self.classes_ = unique_labels(Y[self.LHS_])
 
         self.X_ = X
@@ -71,10 +71,6 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
             num_taxa=self.ntaxa_, nfolds=self.cv_, niter=self.niter_)
 
         self.cv_mse = mses
-        #self.cv_tests = tests
-        #self.cv_tops = tops
-        #self.cv_bots = bots
-        #self.cv_models = models
         return self
 
     def transform(self):
@@ -82,7 +78,6 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         #get optimum number of taxa, set to 16 for now
         self.ntaxa_ = 16
         #create final balance
-        #self.top, self.bot, self.mse, self.model = select_balance(self.Y_,\
         ttop, tbot, tmse, tmodel = select_balance(self.Y_,\
             self.X_, self.LHS_, self.RHS_, self.group_, self.ntaxa_)
 
@@ -90,5 +85,27 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         self.bot = tbot[self.ntaxa_]
         self.mse = tmse[self.ntaxa_]
         self.model = tmodel[self.ntaxa_]
-
+        temp_Y = _build_balance(self.top, self.bot, self.Y_,\
+                                            self.X_)
+        self.Y_ = temp_Y
         return self
+
+    def marg_cond_r2(self):
+        ### Marginal and conditional R2, based on Nakagawa & Schielzeth (2014)
+        ###
+        check_is_fitted(self)
+
+        feparams = mod2.fe_params
+        fekeys = list(feparams.keys())
+        fekeys.remove('Intercept')
+        tdata = self.Y_[fekeys]
+        tdata['Intercept'] = [1 for x in tdata.index]
+        temp = feparams.mul(tdata)
+        sigma_fe = var(temp)
+
+        sigma_re = self.model[-1][0]
+        sigma_e = mod2.scale
+
+        denom = sigma_fe + sigma_re + sigma_e
+        return sigma_fe/denom, (sigma_fe + sigma_re)/denom
+

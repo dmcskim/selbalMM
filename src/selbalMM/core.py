@@ -11,11 +11,12 @@ University of South Florida
 import pandas as pd
 import numpy as np
 import statsmodels.formula.api as smf
+from statsmodels.genmod.bayes_mixed_glm import BinomialBayesMixedGLM
 from scipy.stats import dirichlet
 import pickle
 from multiprocessing import Process
 from collections import defaultdict
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import GroupKFold
 from itertools import permutations
 import sys
 
@@ -169,9 +170,8 @@ def select_balance(wdata, ndata, LHS, RHS, group, num_taxa, test=None):
         #print(x, x in ndata.columns)
     #print(initial_model[1].summary())
     
-    rtop, rbot = [], []
+    rtop, rbot, mse, rmodel = {}, {}, {}, {}
     
-    ntax = len(top) + len(bot)
     
     while len(top) + len(bot) < num_taxa:
         #print(num_taxa, len(top), len(bot))
@@ -180,14 +180,10 @@ def select_balance(wdata, ndata, LHS, RHS, group, num_taxa, test=None):
         #print(cmodel[1].summary())
         
         ntax = len(top) + len(bot)
-        #rtop[ntax] = top
-        #rbot[ntax] = bot
-        #mse[ntax] = cmse
-        #rmodel[ntax] = cmodel
-        rtop += top
-        rbot += bot
-        mse = cmse
-        rmodel = cmodel
+        rtop[ntax] = top
+        rbot[ntax] = bot
+        mse[ntax] = cmse
+        rmodel[ntax] = cmodel
 
     return rtop, rbot, mse, rmodel
 
@@ -198,17 +194,18 @@ def cv_balance(wdata, ndata, LHS, RHS, group, num_taxa=20, nfolds=5, niter=16):
 
     # *** here is where we should parallelize ***
     #tdata = []
+    dsum = ndata.sum(axis=1)
     for titer in range(niter):
+        #take dirichlet sample for each row
         temp = [dirichlet.rvs(ndata.loc[x,:])[0] for x in ndata.index]
         tdata = pd.DataFrame(temp, index=ndata.index,\
                                  columns=ndata.columns)
-        #tdata.append(temp_data.copy())
-        #shuffle wdata
-        # instead of shuffle, build/use dirichlet distribution
-        w2data = wdata
-        n2data = tdata #ndata.loc[w2data.index, :]
-        #n2data = ndata.loc[ndata.index.intersection(w2data.index), :]
-        tmse = _cv_balance(wdata, ndata, LHS, RHS, group, num_taxa, nfolds)
+        #multiply by the row total
+        tdata = tdata.multiply(dsum, axis=0)
+       
+        #find cross-validated balances
+        tmse = _cv_balance(wdata, tdata, LHS, RHS, group, num_taxa, nfolds)
+        print(tmse)
         for k,v in tmse.items():
             res_mse[k].extend(v)
     # only need mse to assess number of taxa needed
@@ -216,24 +213,23 @@ def cv_balance(wdata, ndata, LHS, RHS, group, num_taxa=20, nfolds=5, niter=16):
 
 def _cv_balance(wdata, ndata, LHS, RHS, group, num_taxa, nfolds):
     #a little error checking
-    assert(np.all(w2data.index == n2data.index))
-    assert(~np.any(np.isnan(n2data)))
+    assert(np.all(wdata.index == ndata.index))
+    assert(~np.any(np.isnan(ndata)))
 
     res_mse = defaultdict(list)
 
     group_kfold = GroupKFold(n_splits=nfolds)
-    for train_ind, test_ind in group_kfold.split(w2data, groups=w2data[group]):
-        wtrain = w2data.iloc[train_ind]
-        ntrain = n2data.iloc[train_ind]
-        wtest = w2data.iloc[test_ind]
-        ntest = n2data.iloc[test_ind]
+    for train_ind, test_ind in group_kfold.split(wdata, groups=wdata[group]):
+        wtrain = wdata.iloc[train_ind]
+        ntrain = ndata.iloc[train_ind]
+        wtest = wdata.iloc[test_ind]
+        ntest = ndata.iloc[test_ind]
 
         #tests.append(set(wtest.loc[:, group].values))
 
         tops, bots, mses, models = select_balance(wtrain, ntrain, LHS=LHS,\
             RHS=RHS, group=group, num_taxa=num_taxa, test=[wtest, ntest])
-
-        for i in mses.keys():
-            res_mse[i].append(mses[i])
+        for k,v in mses.items():
+            res_mse[k].append(v)
     return res_mse #, tests, tops, bots, models
 

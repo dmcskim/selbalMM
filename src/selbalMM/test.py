@@ -111,9 +111,20 @@ if __name__ == '__main__':
     working_data = bdata.copy()
     wdata = working_data.loc[working_data.index.intersection(ndata.index),:]
 
-    selbal = selbalMM('BDI_cog', 'TIME + GESTAGE', 'ID')
+    selbal = selbalMM('BDI_cog', 'TIME + GESTAGE', 'ID', niter=20)
     selbal.fit(ndata+1, wdata)
     selbal.transform()
+
+    ### try centered version, any difference? (no interaction terms yet)
+    wwdata = wdata.copy()
+    wwdata['TIME'] = [x-3 for x in wwdata['TIME']]
+    gestage_mean = wwdata['GESTAGE'].mean()
+    wwdata['GESTAGE'] = [x-gestage_mean for x in wwdata['GESTAGE']]
+
+    selbal2 = selbalMM('BDI_cog', 'TIME + GESTAGE', 'ID', niter=20)
+    selbal2.fit(ndata+1, wwdata)
+    selbal2.transform()
+
     #res_mse, test_samps, tops, bots, models = cv_balance(wdata, ndata+1,\
                             #LHS=depvar, nfolds=5, niter=20, num_taxa=20)
     #results = {'mse':res_mse, 'test_groups':test_samps, 'tops':tops,\
