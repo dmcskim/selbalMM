@@ -17,7 +17,7 @@ from collections import defaultdict
 from sklearn.model_selection import GroupShuffleSplit
 from itertools import permutations
 import sys
-from ..src.selbalMM.selbalMM import selbalMM
+from selbalMM import selbalMM
 
 def amalgamate(amal_data, tax, tax_lvl='Full'):
     ''' Amalgamate ASV table into annotation taxonomy. '''
