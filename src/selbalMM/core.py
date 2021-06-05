@@ -173,7 +173,7 @@ def select_balance(wdata, ndata, LHS, RHS, group, num_taxa, test=None):
     rtop, rbot, mse, rmodel = {}, {}, {}, {}
     
     
-    while len(top) + len(bot) < num_taxa:
+    while len(top) + len(bot) < np.min([num_taxa, ndata.shape[1]]):
         #print(num_taxa, len(top), len(bot))
         top, bot, cmse, cmodel = _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test)
         #print('\t',top, bot, cmse)
