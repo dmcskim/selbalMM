@@ -4,7 +4,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
     setuptools.setup(
-        name="selbalMM-dim",
+        name="selbalMM",
         version="0.0.1",
         author="Daniel Ian McSkimming",
         author_email="dmcskimming@usf.edu",
@@ -21,7 +21,6 @@ with open("README.md", "r", encoding="utf-8") as fh:
                     "License :: OSI Approved :: MIT License",
                     "Operating System :: OS Independent",
                 ],
-        package_dir={"": "src"},
-        packages=setuptools.find_packages(where="src"),
+        py_modules = ['selbalMM.selbalMM', 'selbalMM.core'],
         python_requires=">=3.6",
     )
