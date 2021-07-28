@@ -5,9 +5,6 @@ dmcskimming@usf.edu
 University of South Florida
 """
 
-### TODO: break out balance construction, model construction, model testing
-###       into separate functions
-
 from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
@@ -63,9 +60,6 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         self.X_ = X
         self.Y_ = Y
 
-        #call cv_balance, essentially
-        #takes a long time. break up and send each iteration to a new
-        # process?
         mses = cv_balance(self.Y_, self.X_,\
             LHS=self.LHS_, RHS=self.RHS_, group=self.group_,\
             num_taxa=self.ntaxa_, nfolds=self.cv_, niter=self.niter_)

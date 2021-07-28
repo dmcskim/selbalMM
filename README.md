@@ -1,7 +1,7 @@
 # selbalMM
 ## Selecting Balances with Mixed Models
 
-`selbalMM` is a Python extension to the `selbal` R package. `selbalMM` implements a forward-selection method for identifying groups of taxa whose relative abundance, or balance, is associated with a continuous variable of interest. `selbalMM` uses a mixed model approach, allowing for longitudinal and clustered data.
+`selbalMM` is a Python extension to the `selbal` R package originally described in Rivera-Pinto et al. (2018) _Balances: a new perspecive for microbiome analysis_ https://msystems.asm.org/content/3/4/e00053-18. `selbalMM` implements a forward-selection method for identifying groups of taxa whose relative abundance, or balance, is associated with a continuous variable of interest. `selbalMM` uses a mixed model approach, allowing for longitudinal and clustered data.
 
 ## Getting Started
 
