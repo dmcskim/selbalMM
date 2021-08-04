@@ -55,7 +55,7 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         #X, Y = check_X_y(X, Y)
         # build own with check_array 
         # store classes
-        self.classes_ = unique_labels(Y[self.LHS_])
+        #self.classes_ = unique_labels(Y[self.LHS_])
 
         self.X_ = X
         self.Y_ = Y
