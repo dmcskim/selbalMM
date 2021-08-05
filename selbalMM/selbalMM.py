@@ -31,25 +31,22 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
     niter : number of iterations to run
     ntaxa : maximum number of taxa to consider
     """
-    def __init__(self, LHS, RHS, group, cv=5, ncores=4, niter=20, ntaxa=20):
+    def __init__(self, group, cv=5, ncores=4, niter=20, ntaxa=20):
         self.cv_ = cv
         self.cores_ = ncores
         self.niter_ = niter
         self.ntaxa_ = ntaxa
-        self.LHS_ = LHS
-        if 'balance' not in RHS:
-            RHS = 'balance + ' + RHS
-        self.RHS_ = RHS
         self.group_ = group
 
-    def fit(self, X, Y):
+    def fit(self, X, Y, M):
         """ Assess model with cross-validation. Both X and Y must have
         the same indices.
 
         Parameters
         ----------
-        X : Microbiome abundance counts
-        Y : Clinical data and covariates
+        X : Clinical data and covariates
+        Y : Dependent variable of interest
+        M : Microbiome abundance table
         """
         # check input data
         #X, Y = check_X_y(X, Y)
@@ -59,9 +56,10 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
 
         self.X_ = X
         self.Y_ = Y
+        self.M_ = M
 
         mses, tops, bots = cv_balance(self.Y_, self.X_,\
-            LHS=self.LHS_, RHS=self.RHS_, group=self.group_,\
+            self.M_, group=self.group_,\
             num_taxa=self.ntaxa_, nfolds=self.cv_, niter=self.niter_)
 
         self.cv_mse = mses
@@ -78,15 +76,14 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         self.ntaxa_ = 16
         #create final balance
         ttop, tbot, tmse, tmodel = select_balance(self.Y_,\
-            self.X_, self.LHS_, self.RHS_, self.group_, self.ntaxa_)
+            self.X_, self.M_, self.group_, self.ntaxa_)
 
         self.top = ttop[self.ntaxa_]
         self.bot = tbot[self.ntaxa_]
         self.mse = tmse[self.ntaxa_]
         self.model = tmodel[self.ntaxa_]
-        temp_Y = _build_balance(self.top, self.bot, self.Y_,\
-                                            self.X_)
-        self.Y_ = temp_Y
+        temp_Y = _build_balance(self.top, self.bot)
+        self.balance = temp_Y
         return self
 
     def marg_cond_r2(self):

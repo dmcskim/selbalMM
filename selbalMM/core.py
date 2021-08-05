@@ -5,9 +5,6 @@ dmcskimming@usf.edu
 University of South Florida
 """
 
-### TODO: break out balance construction, model construction, model testing
-###       into separate functions
-
 import pandas as pd
 import numpy as np
 import statsmodels.formula.api as smf
@@ -42,14 +39,15 @@ def _get_coefs(tcount, bcount):
 def _build_balance(top, bot, wdata, ndata):
     ### Builds balance given membership for top, bottom.###
     kc, kt, kb = _get_coefs(len(top), len(bot))
-    cdata = wdata.copy()
-    cdata.loc[:, 'top'] = [kt*np.log2(x) for x in ndata[top].product(axis=1)]
-    cdata.loc[:, 'bot'] = [kb*np.log2(x) for x in ndata[bot].product(axis=1)]
-    #minus for bot taken care of with _get_coefs
-    cdata.loc[:, 'balance'] = kc*(cdata.loc[:, 'top'] + cdata.loc[:, 'bot'])
-    return cdata
+    n = wdata.shape[0]
+    top = [kt*np.log2(x) for x in ndata[top].product(axis=1)]
+    bot = [kb*np.log2(x) for x in ndata[bot].product(axis=1)]
 
-def _initial_balance(wdata, ndata, LHS, RHS, group, test=None):
+    #minus for bot taken care of with _get_coefs
+    balance = kc*(top+bot)
+    return np.column_stack(np.ones(n), copy(wdata), balance)
+
+def _initial_balance(x, y, m, group, test=None):
     ## build and check all two part balances
     top, bot = [], []
     results = []
@@ -61,11 +59,13 @@ def _initial_balance(wdata, ndata, LHS, RHS, group, test=None):
     #considers all pairwise taxa, could do something clever and move 
     # to combinations to shorten the loop. Won't reduce number of models
     # in need of fitting.
-    for a,b in permutations(ndata.columns, 2):
+    for a,b in permutations(m.columns, 2):
         ti += 1
         ttop = [a]
         tbot = [b]
-        bdata = _build_balance([a], [b], wdata, ndata)
+        bdata = _build_balance([a], [b], x, m)
+
+        #***REDO***
         md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata,\
                          groups=bdata[group])
         try:
@@ -82,11 +82,13 @@ def _initial_balance(wdata, ndata, LHS, RHS, group, test=None):
                 bot = tbot
                 best_mse = cmse
                 best_model = [bdata['balance'].copy(), md, mdf] #[md,mdf]
+        #consider adding logging, better exception handling
         except (ValueError, np.linalg.LinAlgError) as error:
             continue
+
     return top, bot, best_mse, best_model
 
-def _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test=None):
+def _add_balance(top, bot, x, y, m, group, test=None):
     ## add a new taxon to balance
     results = []
     best_mse = 10000
@@ -100,7 +102,9 @@ def _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test=None):
         # add c to top and build balance
         ctop = top + [c]
         cbot = bot
-        bdata = _build_balance(ctop, cbot, wdata, ndata)
+        bdata = _build_balance(ctop, cbot, x, m)
+
+    #***REDO***
         try:
             md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata, groups=bdata[group])
             mdf = md.fit()
