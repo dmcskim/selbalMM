@@ -19,6 +19,7 @@ from collections import defaultdict
 from sklearn.model_selection import GroupKFold
 from itertools import permutations
 import sys
+from tqdm import tqdm
 
 # Not the best option, but many models will not converge
 #  or have other issues. Especially in early stages (eg, _initial_balance).
@@ -34,10 +35,12 @@ def _mse(real, predicted):
     return mse
 
 def _get_coefs(tcount, bcount):
+    ### Returns coefficients for the balance ###
     common = np.sqrt((tcount*bcount)/(tcount + bcount))
     return common, 1/tcount, -1/bcount
 
 def _build_balance(top, bot, wdata, ndata):
+    ### Builds balance given membership for top, bottom.###
     kc, kt, kb = _get_coefs(len(top), len(bot))
     cdata = wdata.copy()
     cdata.loc[:, 'top'] = [kt*np.log2(x) for x in ndata[top].product(axis=1)]
@@ -51,25 +54,18 @@ def _initial_balance(wdata, ndata, LHS, RHS, group, test=None):
     top, bot = [], []
     results = []
 
-    #assert(np.all(wdata.index == ndata.index))
     best_mse = 10000
     best_model = None
     ti = 0
-    #print(len(ndata.columns))
+
+    #considers all pairwise taxa, could do something clever and move 
+    # to combinations to shorten the loop. Won't reduce number of models
+    # in need of fitting.
     for a,b in permutations(ndata.columns, 2):
-        #print(a,b)
         ti += 1
         ttop = [a]
         tbot = [b]
-        #print(ndata[ttop])
-        #wdata.loc[:, 'top'] = [np.sqrt(1/2)*np.log2(x) for x in ndata[a]]
-        #wdata.loc[:, 'bot'] = [-np.sqrt(1/2)*np.log2(x) for x in ndata[b]]
-        #wdata.loc[:, 'balance'] = wdata['top'] - wdata['bot']
         bdata = _build_balance([a], [b], wdata, ndata)
-        #print(bdata.columns)
-        #display(bdata)
-        #md = smf.mixedlm("BDI_total ~ balance", data=wdata, groups=wdata['ID'])#, re_formula="~TIME")
-        #print(LHS, ' + '.join(RHS))
         md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata,\
                          groups=bdata[group])
         try:
@@ -78,7 +74,6 @@ def _initial_balance(wdata, ndata, LHS, RHS, group, test=None):
             if test is not None:
                 twtdata, tntdata = test
                 bdata = _build_balance([a], [b], twtdata, tntdata) 
-                #bpred = mdf.predict(bdata[RHS+['ID']])
                 bpred = mdf.predict(bdata)
             cmse = _mse(bdata[LHS], bpred)
             results.append([ttop, tbot, mdf.pvalues, cmse])
@@ -87,7 +82,6 @@ def _initial_balance(wdata, ndata, LHS, RHS, group, test=None):
                 bot = tbot
                 best_mse = cmse
                 best_model = [bdata['balance'].copy(), md, mdf] #[md,mdf]
-        #except np.linalg.LinAlgError as error:
         except (ValueError, np.linalg.LinAlgError) as error:
             continue
     return top, bot, best_mse, best_model
@@ -101,8 +95,6 @@ def _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test=None):
     ccols = list(ndata.columns)
     for x in top+bot:
         ccols.remove(x)
-    #ccols.remove([x for x in top])
-    #ccols.remove([x for x in bot])
 
     for c in ccols:
         # add c to top and build balance
@@ -117,20 +109,15 @@ def _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test=None):
             if test is not None:
                 twtdata, tntdata = test
                 bdata = _build_balance(ctop, cbot, twtdata, tntdata) 
-                #bpred = mdf.predict(bdata[RHS+['ID']])
                 bpred = mdf.predict(bdata)
             cmse = _mse(bdata[LHS], bpred)
             
-            #display(wdata)
             results.append([ctop, cbot, mdf.pvalues, cmse])
             if cmse < best_mse:
-                #top3 = ttop
-                #bot3 = tbot
                 best_mse = cmse
                 best_model = [bdata['balance'].copy(), md, mdf]
                 ttop = ctop
                 tbot = cbot
-        #except ValueError, as err:
         except (ValueError, np.linalg.LinAlgError) as error:
             pass
 
@@ -146,7 +133,6 @@ def _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test=None):
             if test is not None:
                 twtdata, tntdata = test
                 bdata = _build_balance(ctop, cbot, twtdata, tntdata) 
-                #bpred = mdf.predict(bdata[RHS+['ID']])
                 bpred = mdf.predict(bdata)
             cmse = _mse(bdata[LHS], bpred)
 
@@ -157,10 +143,9 @@ def _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test=None):
                 ttop = ctop
                 tbot = cbot
         except (ValueError, np.linalg.LinAlgError) as error:
-        #except ValueError as err:
             pass
     return ttop, tbot, best_mse, best_model
-        
+
 def select_balance(wdata, ndata, LHS, RHS, group, num_taxa, test=None):
     top, bot, initial_mse, initial_model = _initial_balance(wdata, ndata, LHS, RHS, group, test)
     #print(top, bot, initial_mse)
@@ -169,16 +154,12 @@ def select_balance(wdata, ndata, LHS, RHS, group, num_taxa, test=None):
     #for x in bot:
         #print(x, x in ndata.columns)
     #print(initial_model[1].summary())
-    
+
     rtop, rbot, mse, rmodel = {}, {}, {}, {}
-    
-    
+
     while len(top) + len(bot) < np.min([num_taxa, ndata.shape[1]]):
-        #print(num_taxa, len(top), len(bot))
         top, bot, cmse, cmodel = _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test)
-        #print('\t',top, bot, cmse)
-        #print(cmodel[1].summary())
-        
+
         ntax = len(top) + len(bot)
         rtop[ntax] = top
         rbot[ntax] = bot
@@ -187,29 +168,30 @@ def select_balance(wdata, ndata, LHS, RHS, group, num_taxa, test=None):
 
     return rtop, rbot, mse, rmodel
 
-def cv_balance(wdata, ndata, LHS, RHS, group, num_taxa=20, nfolds=5, niter=16):
+def cv_balance(wdata, ndata, LHS, RHS, group, num_taxa=20, nfolds=5, niter=100):
     ## goal: identify optimal number of taxa using 1se, explore robustness
     res_mse = defaultdict(list)
-    #tests = []
+    res_tops = defaultdict(list)
+    res_bots = defaultdict(list)
 
     # *** here is where we should parallelize ***
-    #tdata = []
     dsum = ndata.sum(axis=1)
-    for titer in range(niter):
+    for titer in tqdm(range(niter), desc='Iteration'):
         #take dirichlet sample for each row
         temp = [dirichlet.rvs(ndata.loc[x,:])[0] for x in ndata.index]
         tdata = pd.DataFrame(temp, index=ndata.index,\
                                  columns=ndata.columns)
         #multiply by the row total
         tdata = tdata.multiply(dsum, axis=0)
-       
+
         #find cross-validated balances
-        tmse = _cv_balance(wdata, tdata, LHS, RHS, group, num_taxa, nfolds)
-        print(tmse)
+        tmse, tops, bots = _cv_balance(wdata, tdata, LHS, RHS, group, num_taxa, nfolds)
         for k,v in tmse.items():
             res_mse[k].extend(v)
-    # only need mse to assess number of taxa needed
-    return res_mse #, tests, tops, bots, models
+            res_tops[k].append(tops[k])
+            res_bots[k].append(bots[k])
+    # mse for calculating number of taxa, tops/bots for frequency used
+    return res_mse, res_tops, res_bots # tests, tops, bots, models
 
 def _cv_balance(wdata, ndata, LHS, RHS, group, num_taxa, nfolds):
     #a little error checking
@@ -217,6 +199,8 @@ def _cv_balance(wdata, ndata, LHS, RHS, group, num_taxa, nfolds):
     assert(~np.any(np.isnan(ndata)))
 
     res_mse = defaultdict(list)
+    res_tops = defaultdict(list)
+    res_bots = defaultdict(list)
 
     group_kfold = GroupKFold(n_splits=nfolds)
     for train_ind, test_ind in group_kfold.split(wdata, groups=wdata[group]):
@@ -225,11 +209,11 @@ def _cv_balance(wdata, ndata, LHS, RHS, group, num_taxa, nfolds):
         wtest = wdata.iloc[test_ind]
         ntest = ndata.iloc[test_ind]
 
-        #tests.append(set(wtest.loc[:, group].values))
-
         tops, bots, mses, models = select_balance(wtrain, ntrain, LHS=LHS,\
             RHS=RHS, group=group, num_taxa=num_taxa, test=[wtest, ntest])
         for k,v in mses.items():
             res_mse[k].append(v)
-    return res_mse #, tests, tops, bots, models
+            res_tops[k].append(tops[k])
+            res_bots[k].append(bots[k])
+    return res_mse, res_tops, res_bots #, tests, tops, bots, models
 

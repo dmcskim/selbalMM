@@ -60,11 +60,16 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         self.X_ = X
         self.Y_ = Y
 
-        mses = cv_balance(self.Y_, self.X_,\
+        mses, tops, bots = cv_balance(self.Y_, self.X_,\
             LHS=self.LHS_, RHS=self.RHS_, group=self.group_,\
             num_taxa=self.ntaxa_, nfolds=self.cv_, niter=self.niter_)
 
         self.cv_mse = mses
+        self.cv_tops = tops
+        self.cv_bots = bots
+
+        #apply 1se
+        #calculate taxa usage
         return self
 
     def transform(self):
