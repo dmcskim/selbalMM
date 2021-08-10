@@ -8,7 +8,8 @@ University of South Florida
 from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
-from .core import cv_balance, select_balance, _build_balance
+#from .core import cv_balance, select_balance, _build_balance
+from core import cv_balance, select_balance, _build_balance
 from numpy import var
 
 class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
@@ -31,7 +32,7 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
     niter : number of iterations to run
     ntaxa : maximum number of taxa to consider
     """
-    def __init__(self, group, cv=5, niter=20, ntaxa=20):
+    def __init__(self, group, cv=5, niter=100, ntaxa=20):
         self.cv_ = cv
         self.niter_ = niter
         self.ntaxa_ = ntaxa
