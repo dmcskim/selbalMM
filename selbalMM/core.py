@@ -37,7 +37,10 @@ def _get_coefs(tcount, bcount):
     return common, 1/tcount, -1/bcount
 
 def _build_balance(top, bot, wdata, ndata):
-    ### Builds balance given membership for top, bottom.###
+    ### Builds balance given membership for top, bottom.
+    #    wdata: contains independent variables and covariates
+    #    ndata: contains microbiome data
+    ###
     kc, kt, kb = _get_coefs(len(top), len(bot))
     n = wdata.shape[0]
     top = [kt*np.log2(x) for x in ndata[top].product(axis=1)]
@@ -66,15 +69,22 @@ def _initial_balance(x, y, m, group, test=None):
         bdata = _build_balance([a], [b], x, m)
 
         #***REDO***
-        md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata,\
-                         groups=bdata[group])
+        #md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata,\
+                         #groups=bdata[group])
+        gpmod = gp.GPModel(group_data=group, likelihood='gaussian')
         try:
-            mdf = md.fit()
-            bpred = mdf.fittedvalues 
+            gpmod.fit(y=y, X=x, params={"std_dev":True})
+            #mdf = md.fit()
+            btmp = gpmod.predict(group_data_pred=groups, X_pred=x,\
+                                  predict_var=True)
+            bpred = btmp['mu']
+            #bpred = mdf.fittedvalues 
             if test is not None:
                 twtdata, tntdata = test
                 bdata = _build_balance([a], [b], twtdata, tntdata) 
-                bpred = mdf.predict(bdata)
+                btmp = gpmod.predict(group_data_pred=groups, X_pred=bdata,\
+                                  predict_var=True)
+                #bpred = mdf.predict(bdata)
             cmse = _mse(bdata[LHS], bpred)
             results.append([ttop, tbot, mdf.pvalues, cmse])
             if cmse < best_mse:
@@ -104,17 +114,21 @@ def _add_balance(top, bot, x, y, m, group, test=None):
         cbot = bot
         bdata = _build_balance(ctop, cbot, x, m)
 
-    #***REDO***
         try:
-            md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata, groups=bdata[group])
-            mdf = md.fit()
-            bpred = mdf.fittedvalues 
+            gpmod = gp.GPModel(group_data=group, likelihood='gaussian')
+            gpmod.fit(y=y, X=x, params={"std_dev":True})
+            #md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata, groups=bdata[group])
+            #mdf = md.fit()
+            #bpred = mdf.fittedvalues 
+            btmp = gpmod.predict(group_data_pred=groups, X_pred=x,\
+                                  predict_var=True)
+            bpred = btmp['mu']
 
             if test is not None:
                 twtdata, tntdata = test
                 bdata = _build_balance(ctop, cbot, twtdata, tntdata) 
                 bpred = mdf.predict(bdata)
-            cmse = _mse(bdata[LHS], bpred)
+            cmse = _mse(y, bpred)
             
             results.append([ctop, cbot, mdf.pvalues, cmse])
             if cmse < best_mse:
@@ -130,9 +144,14 @@ def _add_balance(top, bot, x, y, m, group, test=None):
         cbot = bot + [c]
         bdata = _build_balance(ctop, cbot, wdata, ndata)
         try:
-            md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata, groups=bdata[group])
-            mdf = md.fit()
-            bpred = mdf.fittedvalues 
+            gpmod = gp.GPModel(group_data=group, likelihood='gaussian')
+            gpmod.fit(y=y, X=x, params={"std_dev":True})
+            #md = smf.mixedlm("{0} ~ {1}".format(LHS, RHS), data=bdata, groups=bdata[group])
+            #mdf = md.fit()
+            btmp = gpmod.predict(group_data_pred=groups, X_pred=x,\
+                                  predict_var=True)
+            bpred = btmp['mu']
+            #bpred = mdf.fittedvalues 
 
             if test is not None:
                 twtdata, tntdata = test
@@ -150,19 +169,15 @@ def _add_balance(top, bot, x, y, m, group, test=None):
             pass
     return ttop, tbot, best_mse, best_model
 
-def select_balance(wdata, ndata, LHS, RHS, group, num_taxa, test=None):
-    top, bot, initial_mse, initial_model = _initial_balance(wdata, ndata, LHS, RHS, group, test)
-    #print(top, bot, initial_mse)
-    #for x in top:
-        #print(x, x in ndata.columns)
-    #for x in bot:
-        #print(x, x in ndata.columns)
-    #print(initial_model[1].summary())
+def select_balance(x, y, m, group, num_taxa, test=None):
+    #build initial balance
+    top, bot, initial_mse, initial_model = _initial_balance(x, y, m, group, test)
 
     rtop, rbot, mse, rmodel = {}, {}, {}, {}
 
+    #add to balance as needed
     while len(top) + len(bot) < np.min([num_taxa, ndata.shape[1]]):
-        top, bot, cmse, cmodel = _add_balance(top, bot, wdata, ndata, LHS, RHS, group, test)
+        top, bot, cmse, cmodel = _add_balance(top, bot, x, y, m, group, test)
 
         ntax = len(top) + len(bot)
         rtop[ntax] = top
@@ -172,24 +187,24 @@ def select_balance(wdata, ndata, LHS, RHS, group, num_taxa, test=None):
 
     return rtop, rbot, mse, rmodel
 
-def cv_balance(wdata, ndata, LHS, RHS, group, num_taxa=20, nfolds=5, niter=100):
+def cv_balance(x, y, m, group, num_taxa=20, nfolds=5, niter=100):
     ## goal: identify optimal number of taxa using 1se, explore robustness
     res_mse = defaultdict(list)
     res_tops = defaultdict(list)
     res_bots = defaultdict(list)
 
-    # *** here is where we should parallelize ***
-    dsum = ndata.sum(axis=1)
-    for titer in tqdm(range(niter), desc='Iteration'):
+    dsum = m.sum(axis=1)
+    #for titer in tqdm(range(niter), desc='Iteration'):
+    for titer in range(niter):
         #take dirichlet sample for each row
-        temp = [dirichlet.rvs(ndata.loc[x,:])[0] for x in ndata.index]
-        tdata = pd.DataFrame(temp, index=ndata.index,\
-                                 columns=ndata.columns)
+        tdata = [dirichlet.rvs(m.loc[x,:])[0] for x in m.index]
+        #tdata = pd.DataFrame(temp, index=ndata.index,\
+                                 #columns=ndata.columns)
         #multiply by the row total
         tdata = tdata.multiply(dsum, axis=0)
 
         #find cross-validated balances
-        tmse, tops, bots = _cv_balance(wdata, tdata, LHS, RHS, group, num_taxa, nfolds)
+        tmse, tops, bots = _cv_balance(x, y, m, group, num_taxa, nfolds)
         for k,v in tmse.items():
             res_mse[k].extend(v)
             res_tops[k].append(tops[k])
@@ -197,7 +212,7 @@ def cv_balance(wdata, ndata, LHS, RHS, group, num_taxa=20, nfolds=5, niter=100):
     # mse for calculating number of taxa, tops/bots for frequency used
     return res_mse, res_tops, res_bots # tests, tops, bots, models
 
-def _cv_balance(wdata, ndata, LHS, RHS, group, num_taxa, nfolds):
+def _cv_balance(x, y, m, group, num_taxa, nfolds):
     #a little error checking
     assert(np.all(wdata.index == ndata.index))
     assert(~np.any(np.isnan(ndata)))
