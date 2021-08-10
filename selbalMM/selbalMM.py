@@ -23,17 +23,16 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
 
     Parameters
     ----------
-    LHS : Left Hand Side of mixed model
-    RHS : Right Hand Side of mixed model (interactions, covariates)
+    X : Independent variables and covariates
+    Y : Dependent variable
+    M : Compositional data
     group : Variable defining clusters
     cv : number of folds for GroupShuffleSplit (train_size = (cv-1)/cv)
-    ncores : number of processes to run iterations on
     niter : number of iterations to run
     ntaxa : maximum number of taxa to consider
     """
-    def __init__(self, group, cv=5, ncores=4, niter=20, ntaxa=20):
+    def __init__(self, group, cv=5, niter=20, ntaxa=20):
         self.cv_ = cv
-        self.cores_ = ncores
         self.niter_ = niter
         self.ntaxa_ = ntaxa
         self.group_ = group
@@ -58,7 +57,7 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         self.Y_ = Y
         self.M_ = M
 
-        mses, tops, bots = cv_balance(self.Y_, self.X_,\
+        mses, tops, bots = cv_balance(self.X_, self.Y_,\
             self.M_, group=self.group_,\
             num_taxa=self.ntaxa_, nfolds=self.cv_, niter=self.niter_)
 
@@ -75,14 +74,14 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         #get optimum number of taxa, set to 16 for now
         self.ntaxa_ = 16
         #create final balance
-        ttop, tbot, tmse, tmodel = select_balance(self.Y_,\
-            self.X_, self.M_, self.group_, self.ntaxa_)
+        ttop, tbot, tmse, tmodel = select_balance(self.X_,\
+            self.Y_, self.M_, self.group_, self.ntaxa_)
 
         self.top = ttop[self.ntaxa_]
         self.bot = tbot[self.ntaxa_]
         self.mse = tmse[self.ntaxa_]
         self.model = tmodel[self.ntaxa_]
-        temp_Y = _build_balance(self.top, self.bot)
+        temp_Y = _build_balance(self.top, self.bot, self.X_, self.M_)
         self.balance = temp_Y
         return self
 
