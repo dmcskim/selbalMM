@@ -51,7 +51,8 @@ def _build_balance(top, bot, wdata, ndata):
 
     #minus for bot taken care of with _get_coefs
     balance = np.add(tp, bt)
-    #print(np.ones(n).shape, wdata.shape, balance.shape)
+
+    #return intercept, covariates, and balance as one array
     return np.concatenate((np.ones(n)[:, None], copy(wdata), balance[:, None]), axis=1)
 
 def _initial_balance(x, y, m, group, test=None):

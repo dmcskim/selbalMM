@@ -8,9 +8,9 @@ University of South Florida
 from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
-#from .core import cv_balance, select_balance, _build_balance
-from core import cv_balance, select_balance, _build_balance
-from numpy import var
+from .core import cv_balance, select_balance, _build_balance
+#from core import cv_balance, select_balance, _build_balance
+from numpy import var, mean, std, sqrt
 
 class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
     """ Selecting balances with mixed models
@@ -61,8 +61,28 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
         mses, tops, bots = cv_balance(self.X_, self.Y_,\
             self.M_, group=self.group_,\
             num_taxa=self.ntaxa_, nfolds=self.cv_, niter=self.niter_)
+        
+        tmse = {}
+        all_mse = []
+        for k,v in mses.items():
+            tmse[k] = [mean(v), std(v)]
+            all_mse += v
+        tse = mean(all_mse)/sqrt(len(all_mse))
 
-        self.cv_mse = mses
+        #1se rule for optimal number of taxa
+        opt_n = 2
+        prev = None
+        for k,v in tmse.items():
+            if prev != None:
+                curr = v[0] - prev
+                if curr < tse:
+                    opt_n = k-1
+            else:
+                prev = v[0]
+
+        ### replace tops/bots with % inclusion ###
+        self.cv_mse = tmse
+        self.ntaxa_ = opt_n
         self.cv_tops = tops
         self.cv_bots = bots
 
@@ -73,7 +93,7 @@ class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
     def transform(self):
         check_is_fitted(self)
         #get optimum number of taxa, set to 16 for now
-        self.ntaxa_ = 16
+        #self.ntaxa_ = 16
         #create final balance
         ttop, tbot, tmse, tmodel = select_balance(self.X_,\
             self.Y_, self.M_, self.group_, self.ntaxa_)
