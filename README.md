@@ -6,13 +6,13 @@
 ## Getting Started
 
 ### Installation
-`selbalMM` can be installed through the python package index PyPI.
+`selbalMM` will be installable soon through the python package index PyPI.
 ```python
 pip install selbalMM
 ```
 
 ### Running
-`selbalMM` has an object-oriented design modelled after SciKit-Learn. After passing the necessary data, the `fit` method performs cross-validation to determine the optimal number of taxa to include int he balance. The `transform` method calculates the final balance using the full dataset (no holdouts for cross-validation).  A dirichlet sampling procedure is used during the cross-validation step to ensure the optimal number of taxa is not overly influenced by low abundance organisms. 
+`selbalMM` has an object-oriented design modelled after SciKit-Learn. After passing the necessary data, the `fit` method performs cross-validation to determine the optimal number of taxa to include in the balance. The `transform` method calculates the final balance using the full dataset (no holdouts for cross-validation).  A dirichlet sampling procedure is used during the cross-validation step to ensure the optimal number of taxa is not overly influenced by low abundance organisms. 
 Note: `X, Y` is microbiome abundance and covariate data, respectively. `LHS/RHS` are the left-hand and right-hand sides of a regression model (patsy format), and `groups` provides the cluster membership.
 
 ```python
