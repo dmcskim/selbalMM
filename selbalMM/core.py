@@ -191,6 +191,7 @@ def _add_balance(top, bot, x, y, m, group, test=None):
 
 def select_balance(x, y, m, group, num_taxa, test=None):
     #build initial balance
+    #print('building initial balance')
     top, bot, initial_mse, initial_model = _initial_balance(x, y, m, group, test)
     #print('***', top, bot, initial_mse)
 
@@ -198,8 +199,8 @@ def select_balance(x, y, m, group, num_taxa, test=None):
 
     #add to balance as needed
     while len(top) + len(bot) < np.min([num_taxa, m.shape[1]]):
-        #print(len(top), len(bot), np.min([num_taxa, m.shape[1]]))
         top, bot, cmse, cmodel = _add_balance(top, bot, x, y, m, group, test)
+        #print(len(top), len(bot), cmse, np.min([num_taxa, m.shape[1]]))
 
         ntax = len(top) + len(bot)
         rtop[ntax] = top
@@ -216,7 +217,7 @@ def cv_balance(x, y, m, group, num_taxa=20, nfolds=5, niter=100):
     res_bots = defaultdict(list)
     dsum = m.sum(axis=1)
     #for titer in tqdm(range(niter), desc='Iteration'):
-    for titer in range(niter):
+    for titer in tqdm(range(niter)):
         #print('next iteration')
         #take dirichlet sample for each row
         tdata = np.array([dirichlet.rvs(m[tx,:])[0] for tx in\
