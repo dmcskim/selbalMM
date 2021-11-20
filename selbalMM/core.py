@@ -9,8 +9,8 @@ import pandas as pd
 import numpy as np
 import statsmodels.formula.api as smf
 from statsmodels.genmod.bayes_mixed_glm import BinomialBayesMixedGLM
-from scipy.stats import dirichlet
-import pickle
+#from scipy.stats import dirichlet
+#import pickle
 from multiprocessing import Process
 #from collections import defaultdict
 from sklearn.model_selection import GroupKFold
@@ -20,6 +20,7 @@ from tqdm import tqdm
 from copy import copy
 import gpboost as gp
 from numba import jit
+import logging
 
 # Not the best option, but many models will not converge
 #  or have other issues. Especially in early stages (eg, _initial_balance).
@@ -27,7 +28,28 @@ if not sys.warnoptions:
     import warnings
     warnings.simplefilter('ignore')
 
-@jit
+@jit(nopython=True, parallel=True)
+def _groupKFold(groups, k=5):
+    nsamp = len(groups)
+    grpSet = groups.unique()
+    assert(len(grpSet) < k)
+    np.random.shuffle(grpSet)
+    assignments = {grp:i%k for i,grp in enumerate(grpSet)}
+    grps = [assignments[x] for x in groups]
+    test_groups = [[i for i,grp in enumerate(groups) if grps[i] == k] for k in\
+                   np.arange(k)]
+    all_groups = [([x for x in np.arange(nsamp) if x not in ctest], ctest) for ctest in test_groups]
+    return all_groups
+
+@jit(nopython=True)
+def _dirichlet(alpha):
+    alpha = alpha/np.sum(alpha)
+    samp = np.array([np.random.gamma(a, 1) for a in alpha])
+    samp = [v / np.sum(samp) for v in samp]
+    assert(len(samp) == len(alpha))
+    return samp
+
+@jit(nopython=True)
 def _mse(real, predicted):
     error = real - predicted
     error = np.power(error, 2)
@@ -35,13 +57,13 @@ def _mse(real, predicted):
     mse = se / len(error)
     return mse
 
-@jit
+@jit(nopython=True)
 def _get_coefs(tcount, bcount):
     ### Returns coefficients for the balance ###
     common = np.sqrt((tcount*bcount)/(tcount + bcount))
     return common, 1/tcount, -1/bcount
 
-@jit
+@jit(nopython=True)
 def _build_balance(top, bot, wdata, ndata):
     ### Builds balance given membership for top, bottom.
     #    wdata: contains independent variables and covariates
@@ -60,7 +82,7 @@ def _build_balance(top, bot, wdata, ndata):
     return np.concatenate((np.ones(n)[:, None], copy(wdata), balance[:, None]), axis=1)
 
 #@jit(nopython=True)
-#@jit(parallel=True)
+@jit(parallel=True)
 def _initial_balance(x, y, m, group, test=None):
     ## build and check all two part balances
     top, bot = [], []
@@ -106,17 +128,17 @@ def _initial_balance(x, y, m, group, test=None):
                 best_mse = cmse
                 best_model = [bdata.copy(), gpmod] #[md,mdf]
         #consider adding logging, better exception handling
-        except (ValueError, np.linalg.LinAlgError, gp.basic.GPBoostError) as error:
+        except:
             #print(error)
             pass
     #print(top, bot, best_mse)
     return top, bot, best_mse, best_model
 
 #@jit(nopython=True)
-#@jit(parallel=True)
+@jit(parallel=True)
 def _add_balance(top, bot, x, y, m, group, test=None):
     ## add a new taxon to balance
-    results = []
+    #results = []
     best_mse = 10000
     best_model = None
     ttop, tbot = [],[]
@@ -150,13 +172,14 @@ def _add_balance(top, bot, x, y, m, group, test=None):
 
             cmse = _mse(tty, bpred)
             
-            results.append([ctop, cbot, cmse])
+            #results.append([ctop, cbot, cmse])
             if cmse < best_mse:
                 best_mse = cmse
                 best_model = [bdata.copy(), gpmod]
                 ttop = ctop
                 tbot = cbot
-        except (ValueError, np.linalg.LinAlgError, gp.basic.GPBoostError) as error:
+        #except (ValueError, np.linalg.LinAlgError, gp.basic.GPBoostError) as error:
+        except:
             continue
             #pass
 
@@ -185,20 +208,21 @@ def _add_balance(top, bot, x, y, m, group, test=None):
 
             cmse = _mse(tty, bpred)
 
-            results.append([ctop, cbot, cmse])
+            #results.append([ctop, cbot, cmse])
             if cmse < best_mse:
                 best_mse = cmse
                 best_model = [bdata.copy(), gpmod]
                 ttop = ctop
                 tbot = cbot
         #except (ValueError, np.linalg.LinAlgError) as error:
-        except (ValueError, np.linalg.LinAlgError, gp.basic.GPBoostError) as error:
+        #except (ValueError, np.linalg.LinAlgError, gp.basic.GPBoostError) as error:
+        except:
             continue
             #pass
     return ttop, tbot, best_mse, best_model
 
-#@jit(nopython=True)
 #@jit(parallel=True)
+@jit(nopython=True, parallel=True)
 def select_balance(x, y, m, group, num_taxa, test=None):
     #build initial balance
     #print('building initial balance')
@@ -220,7 +244,7 @@ def select_balance(x, y, m, group, num_taxa, test=None):
 
     return rtop, rbot, mse, rmodel
 
-#@jit(parallel=True)
+@jit(nopython=True, parallel=True)
 def cv_balance(x, y, m, group, num_taxa=20, nfolds=5, niter=100):
     ## goal: identify optimal number of taxa using 1se, explore robustness
     #res_mse = defaultdict(list)
@@ -230,16 +254,22 @@ def cv_balance(x, y, m, group, num_taxa=20, nfolds=5, niter=100):
     res_tops = {}
     res_bots = {}
     dsum = m.sum(axis=1)
-    for titer in tqdm(range(niter)):
-    #for titer in range(niter):
+    #for titer in tqdm(range(niter)):
+
+    def _mmult(a, b):
+        return [a*x for x in b]
+
+    for titer in range(niter):
         #print('next iteration')
         #take dirichlet sample for each row
-        tdata = np.array([dirichlet.rvs(m[tx,:])[0] for tx in\
-                          range(m.shape[0])])
+        temp = [_dirichlet(m[tx,:]) for tx in range(m.shape[0])]
+        #tdat = np.array(temp)
         #tdata = pd.DataFrame(temp, index=ndata.index,\
                                  #columns=ndata.columns)
         #multiply by the row total
-        tdata = dsum[:, None] * tdata
+        tdata = [_mmult(dsum[i], temp[i]) for i in range(len(dsum))]
+        tdata = np.array(tdata)
+        #tdata = ttmp * tdat
         #tdata = np.multiply(tdata.T, dsum).T
 
         #find cross-validated balances
@@ -259,7 +289,7 @@ def cv_balance(x, y, m, group, num_taxa=20, nfolds=5, niter=100):
     # mse for calculating number of taxa, tops/bots for frequency used
     return res_mse, res_tops, res_bots # tests, tops, bots, models
 
-#@jit(parallel=True)
+@jit(nopython=True, parallel=True)
 def _cv_balance(x, y, m, group, num_taxa, nfolds):
     #a little error checking
     #assert(np.all(wdata.index == ndata.index))
@@ -274,9 +304,9 @@ def _cv_balance(x, y, m, group, num_taxa, nfolds):
     res_tops = {}
     res_bots = {}
 
-    group_kfold = GroupKFold(n_splits=nfolds)
+    #group_kfold = GroupKFold(n_splits=nfolds)
     #print(x.shape, group)
-    for train_ind, test_ind in group_kfold.split(x, groups=group):
+    for train_ind, test_ind in _groupKFold.split(groups=group):
         xtrain = x[train_ind, :]
         mtrain = m[train_ind, :]
         ytrain = y[train_ind]
