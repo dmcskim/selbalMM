@@ -12,13 +12,14 @@ from statsmodels.genmod.bayes_mixed_glm import BinomialBayesMixedGLM
 from scipy.stats import dirichlet
 import pickle
 from multiprocessing import Process
-from collections import defaultdict
+#from collections import defaultdict
 from sklearn.model_selection import GroupKFold
 from itertools import permutations
 import sys
 from tqdm import tqdm
 from copy import copy
 import gpboost as gp
+from numba import jit
 
 # Not the best option, but many models will not converge
 #  or have other issues. Especially in early stages (eg, _initial_balance).
@@ -26,6 +27,7 @@ if not sys.warnoptions:
     import warnings
     warnings.simplefilter('ignore')
 
+@jit
 def _mse(real, predicted):
     error = real - predicted
     error = np.power(error, 2)
@@ -33,11 +35,13 @@ def _mse(real, predicted):
     mse = se / len(error)
     return mse
 
+@jit
 def _get_coefs(tcount, bcount):
     ### Returns coefficients for the balance ###
     common = np.sqrt((tcount*bcount)/(tcount + bcount))
     return common, 1/tcount, -1/bcount
 
+@jit
 def _build_balance(top, bot, wdata, ndata):
     ### Builds balance given membership for top, bottom.
     #    wdata: contains independent variables and covariates
@@ -55,6 +59,8 @@ def _build_balance(top, bot, wdata, ndata):
     #return intercept, covariates, and balance as one array
     return np.concatenate((np.ones(n)[:, None], copy(wdata), balance[:, None]), axis=1)
 
+#@jit(nopython=True)
+#@jit(parallel=True)
 def _initial_balance(x, y, m, group, test=None):
     ## build and check all two part balances
     top, bot = [], []
@@ -106,6 +112,8 @@ def _initial_balance(x, y, m, group, test=None):
     #print(top, bot, best_mse)
     return top, bot, best_mse, best_model
 
+#@jit(nopython=True)
+#@jit(parallel=True)
 def _add_balance(top, bot, x, y, m, group, test=None):
     ## add a new taxon to balance
     results = []
@@ -189,6 +197,8 @@ def _add_balance(top, bot, x, y, m, group, test=None):
             #pass
     return ttop, tbot, best_mse, best_model
 
+#@jit(nopython=True)
+#@jit(parallel=True)
 def select_balance(x, y, m, group, num_taxa, test=None):
     #build initial balance
     #print('building initial balance')
@@ -210,14 +220,18 @@ def select_balance(x, y, m, group, num_taxa, test=None):
 
     return rtop, rbot, mse, rmodel
 
+#@jit(parallel=True)
 def cv_balance(x, y, m, group, num_taxa=20, nfolds=5, niter=100):
     ## goal: identify optimal number of taxa using 1se, explore robustness
-    res_mse = defaultdict(list)
-    res_tops = defaultdict(list)
-    res_bots = defaultdict(list)
+    #res_mse = defaultdict(list)
+    #res_tops = defaultdict(list)
+    #res_bots = defaultdict(list)
+    res_mse = {}
+    res_tops = {}
+    res_bots = {}
     dsum = m.sum(axis=1)
-    #for titer in tqdm(range(niter), desc='Iteration'):
     for titer in tqdm(range(niter)):
+    #for titer in range(niter):
         #print('next iteration')
         #take dirichlet sample for each row
         tdata = np.array([dirichlet.rvs(m[tx,:])[0] for tx in\
@@ -231,12 +245,21 @@ def cv_balance(x, y, m, group, num_taxa=20, nfolds=5, niter=100):
         #find cross-validated balances
         tmse, tops, bots = _cv_balance(x, y, tdata, group, num_taxa, nfolds)
         for k,v in tmse.items():
+            if k not in res_mse:
+                res_mse[k] = []
             res_mse[k].extend(v)
+
+            if k not in res_tops:
+                res_tops[k] = []
             res_tops[k].append(tops[k])
+
+            if k not in res_bots:
+                res_bots[k] = []
             res_bots[k].append(bots[k])
     # mse for calculating number of taxa, tops/bots for frequency used
     return res_mse, res_tops, res_bots # tests, tops, bots, models
 
+#@jit(parallel=True)
 def _cv_balance(x, y, m, group, num_taxa, nfolds):
     #a little error checking
     #assert(np.all(wdata.index == ndata.index))
@@ -244,9 +267,12 @@ def _cv_balance(x, y, m, group, num_taxa, nfolds):
     assert(x.shape[0] == m.shape[0])
     assert(~np.any(np.isnan(m)))
 
-    res_mse = defaultdict(list)
-    res_tops = defaultdict(list)
-    res_bots = defaultdict(list)
+    #res_mse = defaultdict(list)
+    #res_tops = defaultdict(list)
+    #res_bots = defaultdict(list)
+    res_mse = {}
+    res_tops = {}
+    res_bots = {}
 
     group_kfold = GroupKFold(n_splits=nfolds)
     #print(x.shape, group)
@@ -265,8 +291,19 @@ def _cv_balance(x, y, m, group, num_taxa, nfolds):
                 group=gtrain, num_taxa=num_taxa, test=[xtest, ytest, mtest,\
                                                        gtest])
         for k,v in mses.items():
+            if k not in res_mse:
+                res_mse[k] = []
             res_mse[k].append(v)
+
+            if k not in res_tops:
+                res_tops[k] = []
             res_tops[k].append(tops[k])
+
+            if k not in res_bots:
+                res_bots[k] = []
             res_bots[k].append(bots[k])
+            #res_mse[k].append(v)
+            #res_tops[k].append(tops[k])
+            #res_bots[k].append(bots[k])
     return res_mse, res_tops, res_bots #, tests, tops, bots, models
 

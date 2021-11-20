@@ -9,7 +9,6 @@ from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 from sklearn.utils.multiclass import unique_labels
 from .core import cv_balance, select_balance, _build_balance
-#from core import cv_balance, select_balance, _build_balance
 from numpy import var, mean, std, sqrt
 
 class selbalMM(BaseEstimator, RegressorMixin, TransformerMixin):
